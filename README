@@ -1,0 +1,15 @@
+
+操作说明：
+
+例如，测试giflib目录。将捕捉到giflib目录下所有的进程运行，如果检测到使用了gcov编译选项，将自动测试每个进程的单独覆盖率，最后汇总。
+
+1 cd [xaudit.sh PATH] 
+  ./xaudit.sh /home/os/giflib
+
+2 cd /home/os/giflib
+  makecheck
+
+3 cd [xaudit.sh PATH]
+  yes
+
+4 测试结果将自动统计到[xaudit.sh PATH]目录和/home/os/giflib目录下。
