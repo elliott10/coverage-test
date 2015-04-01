@@ -19,7 +19,7 @@ sudo auditctl -l
 
 while true
 do
-	echo -n "Is the program finished (ENTER:yes) ?"
+	echo -n "Is the program finished (yes) ?"
 	read Arg
 
 	case $Arg in
@@ -49,6 +49,9 @@ echo -e '#!/bin/bash' > ./$sec.log
 echo -e '#../configure --disable-nls CFLAGS="-g -fprofile-arcs -ftest-coverage"' >> ./$sec.log
 echo -e "\nzcov_root=$wpath" >> ./$sec.log
 echo -e "sec=$sec" >> ./$sec.log
+#echo -e "awk_cmd=\"awk 'NR==3 {gsub(/[%]/,\\\"\\\",\\\$4);print \\\$4}'\"" >> ./$sec.log
+#echo -e 'coverage_buf=([0]=init)' >> ./$sec.log
+echo -e 'declare -A coverage_buf' >> ./$sec.log
 
 echo -e 'SendInfo(){
 		echo -e "***** TimeOut *****"
@@ -68,6 +71,7 @@ timeout_cmd(){
 
 		kill $sleeppid > /dev/null 2>&1
 }' >> ./$sec.log
+echo >> ./$sec.log
 
 echo -e "analyzing the $wpath/audit$sec.log"
 sudo cat $wpath/audit$sec.log | \
@@ -88,7 +92,9 @@ awk '{if($1 == "type=EXECVE") \
 	print "c_gcda=$(find $zcov_root -name \"*.gcda\")"; \
 	print "if [ -n \"$c_gcda\" ]; then"; \
 	print "zcov scan "$3".zcov $zcov_root"; \
-	print "zcov summarize "$3".zcov >> $zcov_root/$sec.zcov_log"; \
+
+	print "coverage_buf["$3"]=$(zcov summarize "$3".zcov |awk '\''NR==3 {gsub(/[%]/,\"\",$4);print $4}'\'')" \
+
 	print "rm -f $c_gcda"; \
 	print "fi"} \
 }' \
@@ -102,8 +108,79 @@ echo -e 'zcov merge -f multiple.zcov $c_zcov' >> ./$sec.log
 echo -e 'echo -e "##### summary of coverage data #####"' >> ./$sec.log
 echo -e 'zcov summarize multiple.zcov' >> ./$sec.log
 
+echo -e 'mkdir all_zcov; mv $c_zcov all_zcov; cd all_zcov' >> ./$sec.log
+
+echo -e 'for i in ${!coverage_buf[@]}
+do
+	if [ $(echo "${coverage_buf[$i]} < 5}" | bc) -eq 1 ]
+	then 
+		unset coverage_buf[$i]
+	fi   
+done
+
+echo -e "${coverage_buf[@]"
+
+while true
+do
+	echo -n "(Do you want to test (yes OR no) ?"
+	read Arg
+
+	case $Arg in
+
+	Y|y|YES|yes)
+	  break;;
+
+	N|n|NO|no)
+	  exit;;
+
+	esac
+done
+
+max_buf=(0 0 0 0 0 0 0 0 0 0)
+for a in ${index_buf[@]}
+do
+	for b in ${index_buf[@]}
+	do
+		if [ "$b" -eq "$a" ]
+		then
+			continue
+		fi
+
+		for c in ${index_buf[@]}
+		do
+			if [ "$c" -eq "$a" -o "$c" -eq "$b" ]
+			then
+				continue
+			fi' >> ./$sec.log
+
+echo -e "		#echo -e \"1:\$a.zcov 2:\$b.zcov 3:\$c.zcov\"
+			zcov merge -f t.zcov  \$a.zcov \$b.zcov \$c.zcov
+			t_zcov=\$(zcov summarize t.zcov |awk 'NR==3 {gsub(/[%]/,\"\",\$4);print \$4}')" >> ./$sec.log
+
+echo -e '		if [ $(echo "$t_zcov > ${max_buf[2]}" | bc) -eq 1 ]
+			then
+				max_buf[2]=$t_zcov
+				max_buf[1]=$a.$b.$c
+
+			else if [ $(echo "$t_zcov > ${max_buf[4]}" | bc) -eq 1 ]
+				then
+					max_buf[4]=$t_zcov
+					max_buf[3]=$a.$b.$c
+
+				else if [ $(echo "$t_zcov > ${max_buf[6]}" | bc) -eq 1 ]
+					then
+						max_buf[6]=$t_zcov
+						max_buf[5]=$a.$b.$c
+					fi
+				fi
+			fi
+		done
+	done
+done
+echo -e "${max_buf[@]}"' >> ./$sec.log
+echo >> ./$sec.log
+
 echo -e 'echo -e "$0 exit"' >> ./$sec.log
-echo -e 'exit' >> ./$sec.log
 
 if [ -n "$find_gcda" ]; then
 	sudo chmod 755 ./$sec.log
@@ -114,7 +191,6 @@ else
 fi
 
 #cat ./$sec.log
-
 echo -e "\n----- END. See file: ./$sec.log -----\n"
 
 #echo -e "\033[30m 黑色字 \033[0m" 
