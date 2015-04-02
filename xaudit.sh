@@ -53,25 +53,29 @@ echo -e "sec=$sec" >> ./$sec.log
 #echo -e 'coverage_buf=([0]=init)' >> ./$sec.log
 echo -e 'declare -A coverage_buf' >> ./$sec.log
 
-echo -e 'SendInfo(){
-		echo -e "***** TimeOut *****"
-}
+#echo -e 'SendInfo(){
+#		echo -e "***** TimeOut *****"
+#}
 
-timeout_cmd(){
+echo -e 'timeout_cmd(){
 		waitfor=3
 		command=$*
 		$command &
 		commandpid=$!
 
-		( sleep $waitfor ; kill -9 $commandpid  > /dev/null 2>&1 && SendInfo ) &
-
-		watchdog=$!
-		sleeppid=$PPID
-		wait $commandpid > /dev/null 2>&1
-
-		kill $sleeppid > /dev/null 2>&1
+		sleep $waitfor ; kill -9 $commandpid  > /dev/null 2>&1
 }' >> ./$sec.log
+#		( sleep $waitfor ; kill -9 $commandpid  > /dev/null 2>&1 && SendInfo ) &
+
+#		watchdog=$!
+#		sleeppid=$PPID
+#		wait $commandpid > /dev/null 2>&1
+
+#		kill $sleeppid > /dev/null 2>&1
+#}' >> ./$sec.log
 echo >> ./$sec.log
+
+echo -e 'zcov_run(){' >> ./$sec.log
 
 echo -e "analyzing the $wpath/audit$sec.log"
 sudo cat $wpath/audit$sec.log | \
@@ -79,6 +83,7 @@ awk '{if($1 == "type=EXECVE") \
 	{printf("timeout_cmd  "); \
 	for(i=6;i<=NF;i++) \
 	{printf("%s  ",substr($i,4,length($i)))} \
+	printf(" > /dev/null 2>&1"); \
 	print ""} \
 
 	else if($1 == "type=CWD") \
@@ -104,49 +109,66 @@ echo >> ./$sec.log
 echo -e 'cd $zcov_root' >> ./$sec.log
 echo -e 'c_zcov=$(find $zcov_root -name "*.zcov")' >> ./$sec.log
 echo -e 'echo -e "zcov merge \n\033[32m$c_zcov\033[0m"' >> ./$sec.log
-echo -e 'zcov merge -f multiple.zcov $c_zcov' >> ./$sec.log
+echo -e 'zcov merge -f /tmp/multiple.zcov $c_zcov' >> ./$sec.log
 echo -e 'echo -e "##### summary of coverage data #####"' >> ./$sec.log
-echo -e 'zcov summarize multiple.zcov' >> ./$sec.log
+echo -e 'zcov summarize /tmp/multiple.zcov' >> ./$sec.log
+echo -e 'echo -e "####################################"' >> ./$sec.log
 
-echo -e 'mkdir all_zcov; mv $c_zcov all_zcov; cd all_zcov' >> ./$sec.log
+echo -e "mkdir -p /tmp/$sec/all_zcov; mv \$c_zcov /tmp/$sec/all_zcov/" >> ./$sec.log
 
-echo -e 'for i in ${!coverage_buf[@]}
+echo -e "echo -e \"\${!coverage_buf[@]}\" > /tmp/$sec/coverage_buf_ind" >> ./$sec.log
+echo -e "echo -e \"\${coverage_buf[@]}\" > /tmp/$sec/coverage_buf_val" >> ./$sec.log
+
+echo -e '} #zcov_run()' >> ./$sec.log
+
+#echo -e 'f_name=$(echo $0 |sed "s/\.log//g")
+echo -e 'if [ -d /tmp/$sec ]
+then
+	echo -e "No run zcov_run()"
+	for j in $(cat /tmp/$sec/coverage_buf_ind)
+	do
+		coverage_buf[$j]=100
+	done
+
+else
+	echo -e "Run zcov_run()"
+	zcov_run
+
+fi' >> ./$sec.log
+
+echo -e "cd /tmp/$sec/all_zcov" >> ./$sec.log
+
+echo -e 'for i in "${!coverage_buf[@]}"
 do
-	if [ $(echo "${coverage_buf[$i]} < 5}" | bc) -eq 1 ]
+	if [ $(echo "${coverage_buf[$i]} < 5" | bc) -eq 1 ]
 	then 
 		unset coverage_buf[$i]
 	fi   
-done
-
-echo -e "${coverage_buf[@]"
-
-while true
+done' >> ./$sec.log
+echo -e 'echo -e "Coverage :"' >> ./$sec.log
+echo -e 'for c in "${!coverage_buf[@]}"
 do
-	echo -n "(Do you want to test (yes OR no) ?"
-	read Arg
+	echo -n "$c.zcov-->${coverage_buf[$c]} "
+done' >> ./$sec.log
+echo -e 'echo' >> ./$sec.log
+echo -e 'echo -e "More test data in /tmp/$sec"' >> ./$sec.log
 
-	case $Arg in
+echo -e 'echo -e "Will continue to test coverage ..."' >> ./$sec.log
+echo -e 'read user_input' >> ./$sec.log
 
-	Y|y|YES|yes)
-	  break;;
-
-	N|n|NO|no)
-	  exit;;
-
-	esac
-done
-
-max_buf=(0 0 0 0 0 0 0 0 0 0)
-for a in ${index_buf[@]}
+echo -e 'echo -e "Calculating 3 largest combination coverage ..."' >> ./$sec.log
+echo -e "max_buf=(0 0 0 0 0 0 0 0 0 0)" >> ./$sec.log
+echo -e 'for a in ${!coverage_buf[@]}
 do
-	for b in ${index_buf[@]}
+	echo -n "$a.zcov "
+	for b in ${!coverage_buf[@]}
 	do
 		if [ "$b" -eq "$a" ]
 		then
 			continue
 		fi
 
-		for c in ${index_buf[@]}
+		for c in ${!coverage_buf[@]}
 		do
 			if [ "$c" -eq "$a" -o "$c" -eq "$b" ]
 			then
@@ -177,15 +199,18 @@ echo -e '		if [ $(echo "$t_zcov > ${max_buf[2]}" | bc) -eq 1 ]
 		done
 	done
 done
-echo -e "${max_buf[@]}"' >> ./$sec.log
-echo >> ./$sec.log
+echo 
+echo -e "------------------------------"
+echo -e "[ ${max_buf[@]} ]"
+echo -e "------------------------------"
+date +"%F %T"' >> ./$sec.log
 
-echo -e 'echo -e "$0 exit"' >> ./$sec.log
+echo -e 'echo -e "$0 exit."' >> ./$sec.log
 
 if [ -n "$find_gcda" ]; then
 	sudo chmod 755 ./$sec.log
 	echo -e "Running ./$sec.log"
-	./$sec.log
+	/bin/bash ./$sec.log
 else
 	echo -e "NULL *.gcda file. Please configure in $wpath with \033[32m--disable-nls CFLAGS=\"-g -fprofile-arcs -ftest-coverage\"\033[0m"
 fi
